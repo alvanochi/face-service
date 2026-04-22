@@ -23,7 +23,7 @@ services:
     volumes:
       - face_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-NOT-SHELL", "pg_isready", "-U", "faceuser", "-d", "facedb"]
+      test: ["CMD", "pg_isready", "-U", "faceuser", "-d", "facedb"]
       interval: 10s
       timeout: 5s
       retries: 5

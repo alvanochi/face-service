@@ -7,10 +7,8 @@ orjson==3.10.14
 
 # ML / Face recognition
 facenet-pytorch==2.6.0
-torch==2.5.1
-torchvision==0.20.1
-pillow==11.1.0
-numpy==2.2.2
+pillow==10.2.0
+numpy==1.26.4
 
 # Database
 sqlalchemy==2.0.36
