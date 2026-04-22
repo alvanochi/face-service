@@ -1,0 +1,62 @@
+# =============================================================================
+# Face Recognition Service — Docker Compose
+# =============================================================================
+# Services:
+#   - face-service: FastAPI application
+#   - db: PostgreSQL 16 with pgvector extension
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL + pgvector
+  # ---------------------------------------------------------------------------
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: face-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: faceuser
+      POSTGRES_PASSWORD: facepass
+      POSTGRES_DB: facedb
+    ports:
+      - "5433:5432"   # Use 5433 to avoid conflict with any existing PG instance
+    volumes:
+      - face_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-NOT-SHELL", "pg_isready", "-U", "faceuser", "-d", "facedb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Face Recognition Service
+  # ---------------------------------------------------------------------------
+  face-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: face-service
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8001:8000"   # Expose on host port 8001
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://faceuser:facepass@db:5432/facedb
+    volumes:
+      - face_storage:/app/storage/faces
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s   # Model download can take time on first run
+      retries: 3
+
+volumes:
+  face_pgdata:
+    driver: local
+  face_storage:
+    driver: local
