@@ -161,7 +161,7 @@ class FacePipeline:
         img = self._decode_image(image_bytes)
 
         # Detect
-        boxes, probs, _ = self._mtcnn.detect(img, landmarks=False)
+        boxes, probs = self._mtcnn.detect(img, landmarks=False)
 
         if boxes is None or len(boxes) == 0:
             raise ValueError("No face detected in the image.")
