@@ -1,16 +1,150 @@
 # =============================================================================
-# Face Recognition Service — Docker Compose
+# Docker Compose — 2 Independent Microservices
 # =============================================================================
-# Services:
-#   - face-service: FastAPI application
-#   - db: PostgreSQL 16 with pgvector extension
+#
+# ┌───────────────────────────────────────────────────────────────────────────┐
+# │                        DOCKER COMPOSE                                    │
+# │                                                                           │
+# │  ┌─────────────┐    ┌──────────────┐    ┌───────────┐    ┌────────────┐  │
+# │  │   MySQL      │    │   Laravel     │    │  Face DB   │    │  Face Svc  │  │
+# │  │   :3307      │◄───│   :8000       │    │  :5433     │◄───│  :8001     │  │
+# │  └─────────────┘    └──────────────┘    └───────────┘    └────────────┘  │
+# │       ▲                                                       ▲          │
+# │       │              TIDAK TERHUBUNG                          │          │
+# │  Service A (Laravel)                          Service B (Face)           │
+# └───────────────────────────────────────────────────────────────────────────┘
+#
+# Kedua service ini INDEPENDEN. Tidak ada koneksi server-to-server.
+# Client (mobile/web) yang mengorkestrasi panggilan ke masing-masing service.
+#
 # =============================================================================
 
 services:
+
+  # ===========================================================================
+  # SERVICE A: Laravel (fts-absen) + MySQL
+  # ===========================================================================
+  #
+  # Laravel = backend utama untuk:
+  #   - Login/Auth (JWT)
+  #   - Manajemen pembelajaran (mata kuliah, kelas, pertemuan)
+  #   - Generate & scan QR Code untuk absensi
+  #   - Data mahasiswa, dosen, meeting
+  #
+  # MySQL = database relasional untuk menyimpan data user, absensi, dll.
+  # ===========================================================================
+
   # ---------------------------------------------------------------------------
-  # PostgreSQL + pgvector
+  # MySQL 8.0 — Database untuk Laravel
   # ---------------------------------------------------------------------------
-  db:
+  #
+  # "image" = menggunakan image MySQL versi 8.0 dari Docker Hub
+  #           (tidak perlu install MySQL manual, Docker download otomatis)
+  #
+  # "environment" = variabel konfigurasi yang dikirim ke dalam container
+  #                 seperti .env tapi untuk container MySQL
+  #
+  # "ports" = mapping port. Format: "PORT_DI_KOMPUTER:PORT_DI_CONTAINER"
+  #           3307:3306 artinya akses port 3307 di komputer kamu
+  #           akan diteruskan ke port 3306 di dalam container MySQL
+  #
+  # "volumes" = penyimpanan data persisten. Tanpa ini, data hilang
+  #             kalau container dihapus/restart
+  #
+  # "healthcheck" = Docker akan cek berkala apakah MySQL sudah siap
+  #                 digunakan sebelum menjalankan service lain
+  # ---------------------------------------------------------------------------
+  mysql:
+    image: mysql:8.0
+    container_name: fts-mysql
+    restart: unless-stopped                     # auto-restart jika crash
+    environment:
+      MYSQL_ROOT_PASSWORD: root                 # password root MySQL
+      MYSQL_DATABASE: fts_absen                 # buat database otomatis
+      MYSQL_USER: fts_user                      # buat user otomatis
+      MYSQL_PASSWORD: fts_pass                  # password user
+    ports:
+      - "3307:3306"                             # akses via localhost:3307
+    volumes:
+      - mysql_data:/var/lib/mysql               # simpan data persisten
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: --default-authentication-plugin=mysql_native_password
+
+  # ---------------------------------------------------------------------------
+  # Laravel (fts-absen) — Backend utama
+  # ---------------------------------------------------------------------------
+  #
+  # "build" = bangun image dari Dockerfile yang ada di folder fts-absen.
+  #           Docker akan membaca Dockerfile lalu membuat container sesuai
+  #           instruksi di dalamnya (install PHP, Nginx, copy kode, dll.)
+  #
+  # "context" = lokasi folder yang akan di-build. "../fts-absen" artinya
+  #             folder fts-absen yang sejajar dengan folder face-service.
+  #
+  # "depends_on" = tunggu MySQL selesai start & healthy dulu baru jalankan
+  #                Laravel. Ini dependency INFRASTRUKTUR, bukan dependency
+  #                ke service lain.
+  #
+  # "environment" = override .env Laravel saat di dalam Docker.
+  #                 DB_HOST berubah dari 127.0.0.1 menjadi "mysql" karena
+  #                 di dalam Docker, container saling akses pakai nama service.
+  # ---------------------------------------------------------------------------
+  laravel:
+    build:
+      context: ../fts-absen                     # folder kode Laravel
+      dockerfile: Dockerfile                    # file instruksi build
+    container_name: fts-laravel
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy              # tunggu MySQL ready
+    ports:
+      - "8000:8000"                             # akses via localhost:8000
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: base64:OF2Qcld5zha15tSkK1MEbv4wpfkw8jNWY6MR8+rFGbU=
+      APP_URL: http://localhost:8000
+      DB_CONNECTION: mysql
+      DB_HOST: mysql                            # nama service MySQL di atas
+      DB_PORT: 3306
+      DB_DATABASE: fts_absen
+      DB_USERNAME: fts_user
+      DB_PASSWORD: fts_pass
+      CACHE_DRIVER: file
+      SESSION_DRIVER: file
+      QUEUE_CONNECTION: sync
+      JWT_SECRET: UFCzbns9kErlk0bSbC5QdcrFxXtKN8xNlJ841bOufHvLGLfI8nI0b5VkpqPbI7kt
+    volumes:
+      - laravel_storage:/var/www/html/storage   # simpan upload file persisten
+
+  # ===========================================================================
+  # SERVICE B: Face Recognition (Python) + PostgreSQL
+  # ===========================================================================
+  #
+  # Face Service = API untuk:
+  #   - Deteksi wajah dalam gambar
+  #   - Registrasi/enrollment wajah user
+  #   - Verifikasi wajah 1:1 (apakah ini orang yang sama?)
+  #   - Pengenalan wajah 1:N (siapa orang ini?)
+  #
+  # PostgreSQL + pgvector = database khusus untuk menyimpan embedding wajah
+  #                         (vektor 512 dimensi). pgvector adalah extension
+  #                         PostgreSQL untuk operasi vektor/similarity search.
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL + pgvector — Database untuk Face Service
+  # ---------------------------------------------------------------------------
+  #
+  # "image: pgvector/pgvector:pg16" = image PostgreSQL yang sudah terinstall
+  #   extension pgvector. Tanpa ini, kita harus install pgvector manual.
+  # ---------------------------------------------------------------------------
+  face-db:
     image: pgvector/pgvector:pg16
     container_name: face-db
     restart: unless-stopped
@@ -19,7 +153,7 @@ services:
       POSTGRES_PASSWORD: facepass
       POSTGRES_DB: facedb
     ports:
-      - "5433:5432"   # Use 5433 to avoid conflict with any existing PG instance
+      - "5433:5432"                             # akses via localhost:5433
     volumes:
       - face_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -29,33 +163,60 @@ services:
       retries: 5
 
   # ---------------------------------------------------------------------------
-  # Face Recognition Service
+  # Face Recognition Service (FastAPI + Python)
+  # ---------------------------------------------------------------------------
+  #
+  # "build: context: ." = bangun dari folder saat ini (face-service)
+  #
+  # "env_file: .env" = baca file .env di folder face-service untuk
+  #                     konfigurasi (threshold, model, dll.)
+  #
+  # "start_period: 120s" = beri waktu 2 menit untuk download model
+  #                        pertama kali (model PyTorch ~100MB)
+  #
+  # CATATAN: service ini TIDAK depends_on Laravel.
+  #          Keduanya berdiri sendiri, tidak saling terhubung.
   # ---------------------------------------------------------------------------
   face-service:
     build:
-      context: .
+      context: .                                # folder face-service
       dockerfile: Dockerfile
     container_name: face-service
     restart: unless-stopped
     depends_on:
-      db:
-        condition: service_healthy
+      face-db:
+        condition: service_healthy              # tunggu PostgreSQL ready
     ports:
-      - "8001:8000"   # Expose on host port 8001
+      - "8001:8000"                             # akses via localhost:8001
     env_file:
-      - .env
+      - .env                                    # baca konfigurasi dari .env
     environment:
-      DATABASE_URL: postgresql+psycopg://faceuser:facepass@db:5432/facedb
+      DATABASE_URL: postgresql+psycopg://faceuser:facepass@face-db:5432/facedb
     volumes:
-      - face_storage:/app/storage/faces
+      - face_storage:/app/storage/faces         # simpan foto wajah persisten
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
       interval: 30s
       timeout: 10s
-      start_period: 120s   # Model download can take time on first run
+      start_period: 120s
       retries: 3
 
+# =============================================================================
+# VOLUMES — Penyimpanan Data Persisten
+# =============================================================================
+#
+# Volume = "hard disk virtual" untuk container.
+# Data di dalam container bersifat SEMENTARA — hilang kalau container dihapus.
+# Volume menjaga data tetap ada meskipun container di-rebuild/restart.
+#
+# Contoh: mysql_data menyimpan seluruh database MySQL.
+#         Kalau kamu rebuild container MySQL, data tidak hilang.
+# =============================================================================
 volumes:
+  mysql_data:
+    driver: local
+  laravel_storage:
+    driver: local
   face_pgdata:
     driver: local
   face_storage:
