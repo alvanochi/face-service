@@ -1,6 +1,6 @@
 # Face Recognition Service
 
-Internal microservice for face detection, enrollment, verification (1:1), and recognition (1:N).
+Independent microservice for face detection, enrollment, verification (1:1), and recognition (1:N).
 
 ## Quick Start
 
@@ -25,9 +25,9 @@ open http://localhost:8001/docs
 
 ```
 ┌──────────────┐     X-API-Key      ┌─────────────────┐
-│   Laravel    │ ──────────────────▶ │  Face Service   │
-│  (fts-absen) │                    │  FastAPI :8001   │
-│   MySQL DB   │ ◀────── JSON ───── │                  │
+│  Client App  │ ──────────────────▶ │  Face Service   │
+│ (mobile/web) │                    │  FastAPI :8001   │
+│              │ ◀────── JSON ───── │                  │
 └──────────────┘                    └────────┬─────────┘
                                              │
                                     ┌────────▼─────────┐
@@ -37,6 +37,8 @@ open http://localhost:8001/docs
 ```
 
 ## API Endpoints
+
+For full detailed API documentation including request/response formats, please see [API_DOCS.md](API_DOCS.md).
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|

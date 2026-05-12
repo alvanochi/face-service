@@ -30,7 +30,7 @@ class FaceSubject(Base):
     """
     A subject (person) enrolled in the face recognition system.
 
-    subject_id corresponds to the user id / identifier in the Laravel app.
+    subject_id corresponds to the user id / identifier in the client application.
     """
 
     __tablename__ = "face_subjects"
@@ -118,7 +118,7 @@ class FaceVerificationLog(Base):
     threshold = Column(Float, nullable=True)
     decision = Column(String(20), nullable=False)  # match | no_match | error
     latency_ms = Column(Float, nullable=True)
-    source = Column(String(100), nullable=True)  # e.g. "laravel-auth", "mobile"
+    source = Column(String(100), nullable=True)  # e.g. "web-auth", "mobile"
     error_detail = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

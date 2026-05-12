@@ -59,9 +59,9 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Face Recognition Service",
         description=(
-            "Internal microservice for face detection, enrollment, "
+            "Independent microservice for face detection, enrollment, "
             "verification (1:1), and recognition (1:N). "
-            "Consumed by the Laravel authentication backend."
+            "Consumed by any client via REST API with X-API-Key auth."
         ),
         version="1.0.0",
         docs_url="/docs" if settings.openapi_enabled else None,

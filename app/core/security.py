@@ -1,7 +1,7 @@
 """
 Internal API token authentication.
 
-Laravel must send the header:
+Clients must send the header:
     X-API-Key: <shared secret>
 
 This dependency rejects all requests without a valid key.
